@@ -16,6 +16,9 @@ opencv-python
 Code is not setup to be installed. Example implementation can be seen by running notebook **notebook_traffic_light_classifier.ipynb**.  
 Likely you will need to manually set the ```module_path``` unless the notebook is in your current working directory.
 
+### Running tests
+Run file **test_classifier.py**
+
 ## Sample images
 Sample images from dataset  
 <img src="images\all_lights.png" alt="Traffic lights" width="300"/>
