@@ -21,5 +21,5 @@ Sample images from dataset
 <img src="images\all_lights.png" alt="Traffic lights" width="300"/>
 
 ## Acknowledgements
-Images from [MIT Self Driving Car Course](https://selfdrivingcars.mit.edu/) and are licenced under a [Creative Commons Attribution-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-sa/4.0/)
+Images from [MIT Self Driving Car Course](https://selfdrivingcars.mit.edu/) and are licenced under a [Creative Commons Attribution-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-sa/4.0/)  
 Some code and suggested framework supplied as part of Nanodegree programme.
