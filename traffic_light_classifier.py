@@ -49,7 +49,7 @@ class TrafficLightClassifier:
             'red': {
                 'lower': [
                     np.array([0, s_limits[0], v_limits[0]]),
-                    np.array([170, s_limits[0], v_limits[0]])
+                    np.array([167, s_limits[0], v_limits[0]])
                 ],
                 'upper': [
                     np.array([10, s_limits[1], v_limits[1]]),
@@ -58,7 +58,7 @@ class TrafficLightClassifier:
             },
             'yellow': {
                 'lower': [ 
-                    np.array([15, s_limits[0], v_limits[0]])
+                    np.array([2, s_limits[0], v_limits[0]])
                 ],
                 'upper': [
                     np.array([31, s_limits[1], v_limits[1]])
@@ -69,7 +69,7 @@ class TrafficLightClassifier:
                     np.array([40, s_limits[0], v_limits[0]]) #80
                 ],
                 'upper': [
-                    np.array([76, s_limits[1], v_limits[1]]) #114
+                    np.array([90, s_limits[1], v_limits[1]]) #114
                 ]
             }
         }
