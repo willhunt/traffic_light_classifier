@@ -108,8 +108,6 @@ class Tests(unittest.TestCase):
 
             if not image is None:
                 image_list.append( (image, color) )
-                # plt.imshow(image)
-                # plt.show()
             else:
                 raise ImportError("{} image not imported".format(color))
         
@@ -131,20 +129,30 @@ class Tests(unittest.TestCase):
                     try:
                         self.assertGreater(mask_coverage, 0.75)
                     except self.failureException as e:
-                        tlc.visualize_masks(index)
+                        # tlc.visualize_masks(index)
                         print(str(e))
                 else:
                     # E.g. for green image and red color mask should be everywhere
                     self.assertEqual(mask_coverage, 0)
 
     def test_accuracy_training_set(self):
-        tlc = get_test_object()
+        tlc = get_test_object(list_name='training')
         accuracy = tlc.get_accuracy()
         try:
             self.assertGreater(accuracy, 0.95)
         except self.failureException as e:
-            n_plots = min(tlc.get_num_misclassifed(), 10)
-            tlc.visualize_image_sample(list_name='misclassified', randomize=False, n_plots=n_plots)
+            # n_plots = min(tlc.get_num_misclassifed(), 10)
+            # tlc.visualize_image_sample(list_name='misclassified', randomize=False, n_plots=n_plots)
+            print(str(e))
+
+    def test_accuracy_test_set(self):
+        tlc = get_test_object(list_name='test')
+        accuracy = tlc.get_accuracy()
+        try:
+            self.assertGreater(accuracy, 0.95)
+        except self.failureException as e:
+            # n_plots = min(tlc.get_num_misclassifed(), 10)
+            # tlc.visualize_image_sample(list_name='misclassified', randomize=False, n_plots=n_plots)
             print(str(e))
 
 
