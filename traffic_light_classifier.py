@@ -20,23 +20,30 @@ class TrafficLightClassifier:
             traffic light colors. Set by default but can be adjusted to improve classification.
     """
 
-    def __init__(self, original_image_list):
+    def __init__(self, original_image_list=None):
         self.image_lists = {
             'original': None,
             'standardized': None,
             'masked': None,
             'masks': None
         }
-        self.image_lists['original'] = original_image_list
         # Set HSV limits for maksing. Can be modified publically to improve classification
         self.set_default_hsv_limits()
-        # Classify images
+
+        if not original_image_list is None:
+            self.image_lists['original'] = original_image_list
+            # Classify images
+            self.classify_images()
+
+    def set_original_image_list(self, original_image_list):
+        """ Sets originl image list. Also runs preprocessing and classification steps """
+        self.image_lists['original'] = original_image_list
         self.classify_images()
 
     def set_default_hsv_limits(self):
         """ Sets default HSV limits for masking red, yellow and green colors"""
-        s_limits = [50, 255]
-        v_limits = [150, 255]
+        s_limits = [48, 255]
+        v_limits = [125, 255]  #150
 
         self.hsv_limits = {
             'red': {
@@ -51,18 +58,18 @@ class TrafficLightClassifier:
             },
             'yellow': {
                 'lower': [ 
-                    np.array([12, s_limits[0], v_limits[0]])
+                    np.array([15, s_limits[0], v_limits[0]])
                 ],
                 'upper': [
-                    np.array([45, s_limits[1], v_limits[1]])
+                    np.array([31, s_limits[1], v_limits[1]])
                 ]
             },  
             'green': {
                 'lower': [
-                    np.array([80, s_limits[0], v_limits[0]])
+                    np.array([40, s_limits[0], v_limits[0]]) #80
                 ],
                 'upper': [
-                    np.array([114, s_limits[1], v_limits[1]])
+                    np.array([76, s_limits[1], v_limits[1]]) #114
                 ]
             }
         }
@@ -271,7 +278,7 @@ class TrafficLightClassifier:
         avg_brightness = sum_brightness / (len(rgb_image) * len(rgb_image[0]))
         return avg_brightness
 
-    def classify_image_by_brightness(self, image_index, list_name='masked'):
+    def classify_image_by_brightness(self, image_index, list_name='standardized'):
         """
         Classifies traffic light image by brightness
 
@@ -353,6 +360,28 @@ class TrafficLightClassifier:
             misclassified_masks.append(self.image_lists['masks'][index])
         return misclassified_masks
 
+    def visualize_masks(self, image_num, list_name='standardized', colors=None, viz_type='mask'):
+        """
+        Visualizes the red yellow and green masks together for an image
+        """
+        if colors is None:
+            colors = self.hsv_limits.keys()
+
+        fig, axes = plt.subplots(1, len(colors))
+        fig.suptitle("Mask for image {0} from list {1}".format(image_num, list_name))
+        rgb_image = self.image_lists[list_name][image_num][0]
+        for color, ax in zip(colors, axes):
+            ax.set_title(color)
+            masked_image, mask = self.mask_image(rgb_image,
+                                        self.hsv_limits[color]['lower'], self.hsv_limits[color]['upper'])
+            if viz_type == 'mask':
+                ax.imshow(mask, cmap='gray')
+            elif viz_type == 'image':
+                ax.imshow(masked_image, cmap='gray')
+            else:
+                raise ValueError("Argument viz_type must be either 'mask' or 'image'")
+        plt.show()
+
     def classify_images(self):
         """
         Runs all necessary methods to classify images.
@@ -381,4 +410,4 @@ class TrafficLightClassifier:
         Returns:
             (float): Ratio of misclassified images to tested images
         """
-        return self.get_num_misclassifed() / len(self.image_lists['original'])
+        return 1 - self.get_num_misclassifed() / len(self.image_lists['original'])

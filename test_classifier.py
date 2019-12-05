@@ -13,6 +13,10 @@ import unittest
 import helpers
 from traffic_light_classifier import TrafficLightClassifier
 from IPython.display import Markdown, display
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+import matplotlib._png as png
+import numpy as np
 
 # Helper functions for printing markdown text (text in color/bold/etc)
 def printmd(string):
@@ -89,6 +93,59 @@ class Tests(unittest.TestCase):
         
         # No red lights are classified as green; test passed
         print_pass()
+
+    # Test mask on knwon images from wikipedia
+    def test_mask_on_known_hues(self):
+        colors = ['red', 'yellow', 'green']
+        # image_names = ['shades_{0}.png'.format(color) for color in colors]
+        # Read in files
+        image_list = []
+        for color in colors:
+            image_name = 'shades_{0}.png'.format(color)
+            path_components = [module_path, 'images', image_name]
+            image_path = os.path.join(*path_components)
+            image = png.read_png_int(image_path)[:,:,:3]  # Need [:,:,:3] to get RGB not RGBA which yellow and green images are
+
+            if not image is None:
+                image_list.append( (image, color) )
+                # plt.imshow(image)
+                # plt.show()
+            else:
+                raise ImportError("{} image not imported".format(color))
+        
+        # Create classifier object
+        tlc = TrafficLightClassifier(image_list)
+        # hsv_limits = tlc.hsv_limits
+
+        for color in colors:
+            color_label = tlc.one_hot_encode(color)
+            # Create mask for each color
+            for index, item in enumerate(tlc.image_lists['standardized']):
+                masked_image, mask = TrafficLightClassifier.mask_image(item[0],
+                            tlc.hsv_limits[color]['lower'], tlc.hsv_limits[color]['upper'])
+                mask_label = item[1]
+                mask_area = mask.shape[0] * mask.shape[1]
+                mask_coverage = np.sum(mask) / 255 / mask_area
+                if mask_label == color_label:
+                    # E.g. for red image and red color mask should not be present
+                    try:
+                        self.assertGreater(mask_coverage, 0.75)
+                    except self.failureException as e:
+                        tlc.visualize_masks(index)
+                        print(str(e))
+                else:
+                    # E.g. for green image and red color mask should be everywhere
+                    self.assertEqual(mask_coverage, 0)
+
+    def test_accuracy_training_set(self):
+        tlc = get_test_object()
+        accuracy = tlc.get_accuracy()
+        try:
+            self.assertGreater(accuracy, 0.95)
+        except self.failureException as e:
+            n_plots = min(tlc.get_num_misclassifed(), 10)
+            tlc.visualize_image_sample(list_name='misclassified', randomize=False, n_plots=n_plots)
+            print(str(e))
 
 
 if __name__ == "__main__":
