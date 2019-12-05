@@ -144,13 +144,38 @@ class TrafficLightClassifier:
         return one_hot_encoded
 
     @staticmethod
-    def standardize_image(image):
+    def change_brightness_and_contrast(rgb_image, alpha, beta):
+        """
+        Changes brightness and contrast of an RGB image
+
+        Args:
+            alpha (float): contrast adjustment
+            beta (float): brightness adjustment
+        """
+        changed_image = cv2.convertScaleAbs(rgb_image, alpha=alpha, beta=beta)
+        return changed_image
+
+
+    @staticmethod
+    def standardize_image(rgb_image):
         """
         Preprosses image to standarize
         """
-        standard_im = cv2.resize(np.copy(image), (25, 25))
+        # Standardize size
+        square_image = cv2.resize(np.copy(rgb_image), (25, 25))
+
+        # Standardize contrast
+        # YUV VERSION - helps a tiny bit but throws the hues off
+        stdcontrast_image =  cv2.cvtColor(square_image, cv2.COLOR_RGB2YUV)
+        # Equlaize histogram on value channel
+        stdcontrast_image[:,:,0] = cv2.equalizeHist(stdcontrast_image[:,:,0])
+        #  Convert back to RGB
+        stdcontrast_image = cv2.cvtColor(stdcontrast_image, cv2.COLOR_YUV2RGB)
+
+        # Increase contrast
+        # highcontrast_image = TrafficLightClassifier.change_brightness_and_contrast(square_image, 2.0, -20.0)
         
-        return standard_im
+        return stdcontrast_image
 
     def standardize_image_list(self, list_name='original'):
         """
@@ -270,7 +295,7 @@ class TrafficLightClassifier:
         """
         hsv_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2HSV)
         # trim images to remove background at sides (generally lights are rectangles)
-        hsv_image = hsv_image[2:-2, 4:-4, :]
+        hsv_image = hsv_image[2:-2, 5:-5, :]
         # Add up all the pixel values in the V channel
         sum_brightness = np.sum(hsv_image[:,:,2])
         
