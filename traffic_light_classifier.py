@@ -56,27 +56,27 @@ class TrafficLightClassifier:
             'red': {
                 'lower': [
                     np.array([0, s_limits[0], v_limits[0]]),
-                    np.array([167, s_limits[0], v_limits[0]])
+                    np.array([173, s_limits[0], v_limits[0]])
                 ],
                 'upper': [
                     np.array([10, s_limits[1], v_limits[1]]),
-                    np.array([179, s_limits[1], v_limits[1]])
+                    np.array([185, s_limits[1], v_limits[1]])
                 ]
             },
             'yellow': {
                 'lower': [ 
-                    np.array([2, s_limits[0], v_limits[0]])
+                    np.array([17, s_limits[0], v_limits[0]])
                 ],
                 'upper': [
-                    np.array([31, s_limits[1], v_limits[1]])
+                    np.array([40, s_limits[1], v_limits[1]])
                 ]
             },  
             'green': {
                 'lower': [
-                    np.array([40, s_limits[0], v_limits[0]]) #80
+                    np.array([45, s_limits[0], v_limits[0]]) #80
                 ],
                 'upper': [
-                    np.array([90, s_limits[1], v_limits[1]]) #114
+                    np.array([93, s_limits[1], v_limits[1]]) #114
                 ]
             }
         }
@@ -638,8 +638,9 @@ class TrafficLightClassifier:
             text = "({0:.3f}, {1:.3f}, {2:.2f})".format(point[0], point[1], point[2])
             ax.text(point[0], point[1], point[2], text, zdir=(1, 1, 0))
 
-        x, y = np.meshgrid(mid_range, scale_range)
-        ax.plot_surface(x, y, accuracies, cmap=cm.coolwarm)
+        # x, y = np.meshgrid(mid_range, scale_range)
+        # ax.plot_surface(x, y, accuracies, cmap=cm.coolwarm)
+        ax.plot_trisurf(xyz_results[:,0], xyz_results[:,1], xyz_results[:,2])
 
         ax.set_xlabel('Mean')
         ax.set_ylabel('Scale')
@@ -655,6 +656,70 @@ class TrafficLightClassifier:
         self.set_default_masksize_sigmoid_values()
 
     def plot_effect_of_hue_thresholds(self):
+        n = 7
         ranges = {
-            'red': []
+            'red': {
+                'lower': [
+                    [0, 4],
+                    [160, 180]
+                ],
+                'upper': [
+                    [5, 20],
+                    [181, 220]
+                ]
+            },
+            'yellow': {
+                'lower': [ 
+                    [5, 30]
+                ],
+                'upper': [
+                    [60, 85]
+                ]
+            },  
+            'green': {
+                'lower': [
+                    [20, 70]
+                ],
+                'upper': [
+                    [85, 110]
+                ]
+            }
         }
+        xyz_results = {}
+        results = {}
+        methods = ['brightness', 'masksize']
+        for color in ranges.keys():
+            for r_i, (low, high) in enumerate(zip(ranges[color]['lower'], ranges[color]['upper'])):
+                low_range = np.linspace(low[0], low[1], num=n)
+                high_range = np.linspace(high[0], high[1], num=n)
+                color_range = "{0} ({1})".format(color, r_i)
+                xyz_results[color_range] = []
+                for l_i in range(n):
+                    self.hsv_limits[color]['lower'][r_i][0] = low_range[l_i]
+                    for h_i in range(n):
+                        for method in methods:
+                            self.hsv_limits[color]['upper'][r_i][0] = high_range[h_i]
+                            self.classify_images(methods=[method])
+                            xyz_results[method][color_range].append( (low_range[l_i], high_range[h_i], self.get_accuracy()) )
+        # Surface Plot
+        n_plots = len(xyz_results)
+        color_maps = {'red': 'Reds', 'yellow': 'Oranges', 'green': 'Greens'}
+        fig_surf = plt.figure()
+        for c_i, color_range in enumerate(xyz_results.keys()):
+            # Plot the results for this color
+            ax = fig_surf.add_subplot(1, n_plots, c_i+1, projection='3d')
+            x = [a[0] for a in xyz_results[color_range]['brightness']]
+            y = [a[1] for a in xyz_results[color_range]['brightness']]
+            z = [a[2] for a in xyz_results[color_range]['brightness']]
+            ax.scatter(x, y, z)
+            color = color_range.split()[0]
+            ax.plot_trisurf(x, y, z, cmap=plt.get_cmap(color_maps[color]))
+            ax.set_xlabel('Lower Hue')
+            ax.set_ylabel('Upper Hue')
+            ax.set_zlabel('Classifier Accuracy')
+            ax.set_title(color_range)
+
+        fig.suptitle('Effect of Hue Thresholds On Traffic Light Classifier Accuracy with Brightness Method')
+        plt.show()
+        self.set_default_hsv_limits()
+        return xyz_results
