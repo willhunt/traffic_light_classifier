@@ -324,7 +324,7 @@ class TrafficLightClassifier:
             list_name (string): Name of image list to select from.
 
         Returns:
-            p_brightness (list): Probabilities of that light is showing each color
+            p_brightness (list): Probabilities of that light is showing each color in one hot encoded list order.
         """
         rgb_image = self.image_lists[list_name][image_index][0]
         colors = ['red', 'yellow', 'green']
@@ -368,19 +368,29 @@ class TrafficLightClassifier:
             list_name (string): Name of image list to select from.
 
         Returns:
-            feature (list): One hot encoded feature classification
+            p_masksize (list): Probabilities of that light is showing each color in one hot encoded list order.
         """
         rgb_image = self.image_lists[list_name][image_index][0]
         colors = ['red', 'yellow', 'green']
-        coverage = []
+        coverages = []
+        n_zero_coverage = 0
         for color in colors:
             _, mask = self.mask_image(rgb_image,
                                         self.hsv_limits[color]['lower'], self.hsv_limits[color]['upper'])
-            coverage.append(self.mask_coverage(mask))
-        # Apply sigmoid function to coverage to weight masks of right size with higher probability
-        mid = self.masksize_sigmoid_values['mid']
-        scale = self.masksize_sigmoid_values['scale']
-        p_masksize = [self.sigmoid(x, scale, mid) for x in coverage]
+            coverage = self.mask_coverage(mask)
+            coverages.append(coverage)
+            if coverage == 0:
+                n_zero_coverage += 1
+        
+        if n_zero_coverage == 2:
+            p_masksize = [1 if x>0 else 0 for x in coverages]
+        elif n_zero_coverage == 3:
+            p_masksize = [1, 1, 1]
+        else:
+            # Apply sigmoid function to coverage to weight masks of smaller size with higher probability
+            mid = self.masksize_sigmoid_values['mid']
+            scale = self.masksize_sigmoid_values['scale']
+            p_masksize = [self.sigmoid(x, scale, mid) for x in coverages]
         
         return p_masksize
 
@@ -406,10 +416,6 @@ class TrafficLightClassifier:
         for method in methods:
             p_method = classification_functions[method](image_index, list_name)
             p_combined = [x*y for x,y in zip(p_combined, p_method)]
-        # p_brightness = self.classify_image_by_brightness(image_index, list_name)
-        # p_masksize = self.classify_image_by_mask_size(image_index, list_name)
-        # p_combined = [x * y for x,y in zip(p_brightness, p_masksize)]
-        # p_combined = p_masksize
         # Convert to one hot encoded prediction
         p_max = max(p_combined)
         predicted_label = [1 if x==p_max else 0 for x in p_combined]
@@ -514,6 +520,13 @@ class TrafficLightClassifier:
         return 1 - self.get_num_misclassifed() / len(self.image_lists['original'])
 
     def set_lower_sv_thesholds(self, s_lower, v_lower):
+        """
+        Sets lower saturation and value thresholds for all colors for HSV masking.
+
+        Args:
+            s_lower (float): Lower saturation threshold.
+            v_lower (float): Lower value threshold
+        """
         for color in self.hsv_limits.keys():
             for threshold in self.hsv_limits[color]['lower']:
                 if not s_lower is None:
@@ -523,8 +536,15 @@ class TrafficLightClassifier:
     
     def set_h_thresholds(self, color, limit, h_new):
         """
-        Set hue threshold
+         Sets hue thresholds for all colors for HSV masking.
+
+        Args:
+            color (string): 'Red', 'yellow', or 'green' color.
+            limit (string): 'upper' or 'lower' limit'
+            h_new (string): New hue threshold value
         """
+        if limit not in ['upper', 'lower']:
+            raise ValueError("limit argument must be either 'lower' or 'upper'")
         self.hsv_limits[color][limit][-1][0] = h_new
 
     def train_classifier(self, training_image_list):
