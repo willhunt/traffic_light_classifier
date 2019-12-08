@@ -49,23 +49,23 @@ class TrafficLightClassifier:
 
     def set_default_hsv_limits(self):
         """ Sets default HSV limits for masking red, yellow and green colors"""
-        s_limits = [35, 255]
-        v_limits = [100, 255]  #125
+        s_limits = [1, 255] #35
+        v_limits = [1, 255]  #125
 
         self.hsv_limits = {
             'red': {
                 'lower': [
-                    np.array([0, s_limits[0], v_limits[0]]),
-                    np.array([173, s_limits[0], v_limits[0]])
+                    np.array([1, s_limits[0], v_limits[0]]),
+                    np.array([172, s_limits[0], v_limits[0]])
                 ],
                 'upper': [
-                    np.array([10, s_limits[1], v_limits[1]]),
+                    np.array([5, s_limits[1], v_limits[1]]),
                     np.array([185, s_limits[1], v_limits[1]])
                 ]
             },
             'yellow': {
                 'lower': [ 
-                    np.array([17, s_limits[0], v_limits[0]])
+                    np.array([13, s_limits[0], v_limits[0]])
                 ],
                 'upper': [
                     np.array([40, s_limits[1], v_limits[1]])
@@ -73,7 +73,7 @@ class TrafficLightClassifier:
             },  
             'green': {
                 'lower': [
-                    np.array([45, s_limits[0], v_limits[0]]) #80
+                    np.array([75, s_limits[0], v_limits[0]]) #80
                 ],
                 'upper': [
                     np.array([93, s_limits[1], v_limits[1]]) #114
@@ -83,8 +83,8 @@ class TrafficLightClassifier:
 
     def set_default_masksize_sigmoid_values(self):
         self.masksize_sigmoid_values = {
-            'mid': 0.4,
-            'scale': -25,
+            'mid': 0.1,
+            'scale': -100,
         }
 
     def visualize_image(self, image_num, list_name='original'):
@@ -168,7 +168,6 @@ class TrafficLightClassifier:
         changed_image = cv2.convertScaleAbs(rgb_image, alpha=alpha, beta=beta)
         return changed_image
 
-
     @staticmethod
     def standardize_image(rgb_image):
         """
@@ -188,7 +187,7 @@ class TrafficLightClassifier:
         # Increase contrast
         # highcontrast_image = TrafficLightClassifier.change_brightness_and_contrast(square_image, 2.0, -20.0)
         
-        return stdcontrast_image
+        return square_image
 
     def standardize_image_list(self, list_name='original'):
         """
@@ -381,11 +380,11 @@ class TrafficLightClassifier:
         # Apply sigmoid function to coverage to weight masks of right size with higher probability
         mid = self.masksize_sigmoid_values['mid']
         scale = self.masksize_sigmoid_values['scale']
-        p_masksize = [self.sigmoid(x, mid, scale) for x in coverage]
+        p_masksize = [self.sigmoid(x, scale, mid) for x in coverage]
         
         return p_masksize
 
-    def classify_image(self, image_index, list_name='standardized', methods=['brightness', 'masksize']):
+    def classify_image(self, image_index, list_name='standardized', methods=['brightness']):
         """
         Classifies traffic light image by all available features
 
@@ -420,7 +419,7 @@ class TrafficLightClassifier:
         
         return predicted_label
 
-    def get_misclassified_images(self, methods=['brightness', 'masksize']):
+    def get_misclassified_images(self, methods=['brightness']):
         """
         Get misclassified images based upon labels.
 
@@ -484,7 +483,7 @@ class TrafficLightClassifier:
                 raise ValueError("Argument viz_type must be either 'mask' or 'image'")
         plt.show()
 
-    def classify_images(self, methods=['brightness', 'masksize']):
+    def classify_images(self, methods=['brightness']):
         """
         Runs all necessary methods to classify images.
 
@@ -517,15 +516,16 @@ class TrafficLightClassifier:
     def set_lower_sv_thesholds(self, s_lower, v_lower):
         for color in self.hsv_limits.keys():
             for threshold in self.hsv_limits[color]['lower']:
-                threshold[1] = s_lower
-                threshold[2] = v_lower
+                if not s_lower is None:
+                    threshold[1] = s_lower
+                if not v_lower is None:
+                    threshold[2] = v_lower
     
     def set_h_thresholds(self, color, limit, h_new):
+        """
+        Set hue threshold
+        """
         self.hsv_limits[color][limit][-1][0] = h_new
-        # for limit in self.hsv_limits[color]['lower']:
-        #     limit[0] = h_lower
-        # for limit in self.hsv_limits[color]['upper']:
-        #     limit[0] = h_upper
 
     def train_classifier(self, training_image_list):
         """
@@ -574,152 +574,219 @@ class TrafficLightClassifier:
         accuracy = self.get_accuracy()
         return 1 - accuracy
 
-    def plot_effect_of_sv_thresholds(self):
+    def plot_effect_of_sv_thresholds_surf(self):
+        """
+        Plots effect of lower saturation and value thresholds using brightness classification method. Ploted with surface to view interactions.
+        """
         # Get accuracy over range of SV lower limits
-        n = 8
+        n = 5
         s_lowers = np.linspace(0, 254, num=n)
         v_lowers = np.linspace(0, 254, num=n)
-        accuracies = np.zeros( (n, n) )
         xyz_results = []
         for s_i in range(n):
             for v_i in range(n):
-                self.change_and_evaluate_hsv_thresholds([s_lowers[v_i], v_lowers[s_i]])
+                self.set_lower_sv_thesholds(s_lowers[v_i], v_lowers[s_i])
                 self.classify_images(methods=['brightness'])
-                accuracies[s_i, v_i] = self.get_accuracy()
                 xyz_results.append( (s_lowers[s_i], v_lowers[v_i], self.get_accuracy()) )
         # Plot
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1, projection='3d')
+        # Extract coordinates
+        xs = [a[0] for a in xyz_results]
+        ys = [a[1] for a in xyz_results]
+        zs = [a[2] for a in xyz_results]
         # Plot points
-        xyz_results = np.array(xyz_results)  # Change to numpy array for easy extraction of columns
-        ax.scatter(xyz_results[:,0], xyz_results[:,1], xyz_results[:,2], label='True Position')
+        ax.scatter(xs, ys, zs, label='True Position')
         # Add data labels
-        for point in xyz_results:
-            text = "({0:.0f}, {1:.0f}, {2:.2f})".format(point[0], point[1], point[2])
-            ax.text(point[0], point[1], point[2], text, zdir=(1, 1, 0))
-
+        max_accuracy = max(zs)
+        for x,y,z in zip(xs, ys, zs):
+            if z == max_accuracy:
+                text = "({0:.0f}, {1:.0f}, {2:.2f})".format(x, y, z)
+                ax.text(x, y, z, text, zdir=(1, 1, 0))
         # Plot the surface.
-        x, y = np.meshgrid(s_lowers, v_lowers)
-        ax.plot_surface(x, y, accuracies, cmap=cm.coolwarm)
-
+        ax.plot_trisurf(xs, ys, zs, cmap=cm.coolwarm)
         ax.set_xlabel('Saturation Lower Threshold')
         ax.set_ylabel('Value Lower Threshold')
         ax.set_zlabel('Classifier Accuracy')
         fig.suptitle('Effect of HSV Saturation and Value Lower Thresholds\nOn Traffic Light Classifier Accuracy')
-
         plt.show()
-
         # Reset hsv limit
         self.set_default_hsv_limits()
 
+    def plot_effect_of_sv_thresholds(self, methods=[['brightness'], ['masksize'], ['brightness', 'masksize']]):
+        """
+        Plots effect of lower saturation and value thresholds using all classification methods. Values evaluated seperately without interaction.
+
+        Returns:
+            results: Dictionary of results.
+        """
+        n = 4
+        ranges = {
+            'saturation': np.linspace(0, 254, num=n),
+            'value': np.linspace(0, 254, num=n)
+        }
+        results = {}
+        for variable in ranges.keys():
+            results[variable] = {}
+            for method in methods:
+                method_str = str(method)
+                results[variable][method_str] = []
+                for value in ranges[variable]:
+                    if variable == 'saturation': 
+                        self.set_lower_sv_thesholds(value, None)
+                    else:
+                        self.set_lower_sv_thesholds(None, value)
+                    self.classify_images(methods=method)
+                    results[variable][method_str].append( (value, self.get_accuracy()) )
+            self.set_default_hsv_limits()
+
+        # Plot
+        plot_cols = len(results)
+        fig = plt.figure()
+        plot_i = 1
+        for variable in results.keys():
+            # Plot the results for this color
+            ax = fig.add_subplot(1, plot_cols, plot_i)
+            for method in methods:
+                method_str = str(method)
+                x = [a[0] for a in results[variable][method_str]]
+                y = [a[1] for a in results[variable][method_str]]
+                ax.plot(x, y, label=method_str)
+
+            ax.set_xlabel('Value')
+            ax.set_ylabel('Classifier Accuracy')
+            ax.set_title( "{0} Lower Threshold".format(variable.capitalize()) )
+            plot_i += 1
+
+        fig.suptitle('Effect of Saturation & Value Lower Thresholds On Traffic Light Classifier Accuracy')
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+        return results
+
     def plot_effect_of_masksize_sigmoid(self):
-        n = 3
-        mid_range = np.linspace(0.1, 0.9, num=n)
-        scale_range = np.linspace(-50, -5, num=n)
+        """
+        Plots effect of masksize sigmoid parameters with all (combined) classification methods. Ploted with surface to view interactions.
+        """
+        n = 5
+        mid_range = np.linspace(0, 1.2, num=n)
+        scale_range = np.linspace(-100, -25, num=n)
         accuracies = np.zeros( (n, n) )
         xyz_results = []
         for m_i in range(n):
             self.masksize_sigmoid_values['mid'] = mid_range[m_i]
             for s_i in range(n):
                 self.masksize_sigmoid_values['scale'] = scale_range[s_i]
-                self.classify_images(methods=['masksize'])
-                accuracies[s_i, m_i] = self.get_accuracy()
+                self.classify_images(methods=['masksize', 'brightness'])
                 xyz_results.append( (mid_range[m_i], scale_range[s_i], self.get_accuracy()) )
+
         # Plot
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1, projection='3d')
-        # Plot the surface.
-        # surf = ax.plot_surface(mean_range, scale_range, accuracies, cmap=cm.coolwarm,
-        #                linewidth=0, antialiased=False)
-        xyz_results = np.array(xyz_results)  # Change to numpy array for easy extraction of columns
-        ax.scatter(xyz_results[:,0], xyz_results[:,1], xyz_results[:,2], label='True Position')#mean_range, scale_range, accuracies)
+        # Extract coordinates
+        xs = [a[0] for a in xyz_results]
+        ys = [a[1] for a in xyz_results]
+        zs = [a[2] for a in xyz_results]
+        # Plot points
+        ax.scatter(xs, ys, zs, label='True Position')
         # Add data labels
-        for point in xyz_results:
-            text = "({0:.3f}, {1:.3f}, {2:.2f})".format(point[0], point[1], point[2])
-            ax.text(point[0], point[1], point[2], text, zdir=(1, 1, 0))
-
-        # x, y = np.meshgrid(mid_range, scale_range)
-        # ax.plot_surface(x, y, accuracies, cmap=cm.coolwarm)
-        ax.plot_trisurf(xyz_results[:,0], xyz_results[:,1], xyz_results[:,2])
+        max_accuracy = max(zs)
+        for x,y,z in zip(xs, ys, zs):
+            if z == max_accuracy:
+                text = "({0:.3f}, {1:.3f}, {2:.2f})".format(x, y, z)
+                ax.text(x, y, z, text, zdir=(1, 1, 0))
+        # Plot the surface.
+        ax.plot_trisurf(xs, ys, zs, cmap=cm.coolwarm)
 
         ax.set_xlabel('Mean')
         ax.set_ylabel('Scale')
         ax.set_zlabel('Classifier Accuracy')
         fig.suptitle('Effect of Mask Size Sigmoid Values\nOn Traffic Light Classifier Accuracy')
-        # Add a color bar which maps values to colors.
-        # fig.colorbar(surf, shrink=0.5, aspect=5)
         plt.show()
-
-        # max_point = np.max(xyz_results)
-
         # Reset pdf values
         self.set_default_masksize_sigmoid_values()
 
-    def plot_effect_of_hue_thresholds(self):
-        n = 7
+    def plot_effect_of_hue_thresholds(self, methods=[['brightness'], ['masksize'], ['brightness', 'masksize']]):
+        """
+        Plots effect of hue upper and lower thresholds for all classification methods. Values evaluated seperately without interaction.
+
+        Returns:
+            results: Dictionary of results.
+        """
+        n = 5
         ranges = {
             'red': {
                 'lower': [
-                    [0, 4],
-                    [160, 180]
+                    [0, 5],
+                    [150, 180]
                 ],
                 'upper': [
-                    [5, 20],
-                    [181, 220]
+                    [1, 15],
+                    [170, 220]
                 ]
             },
             'yellow': {
                 'lower': [ 
-                    [5, 30]
+                    [5, 40]
                 ],
                 'upper': [
-                    [60, 85]
+                    [40, 100]
                 ]
             },  
             'green': {
                 'lower': [
-                    [20, 70]
+                    [20, 100]
                 ],
                 'upper': [
                     [85, 110]
                 ]
             }
         }
-        xyz_results = {}
         results = {}
-        methods = ['brightness', 'masksize']
         for color in ranges.keys():
             for r_i, (low, high) in enumerate(zip(ranges[color]['lower'], ranges[color]['upper'])):
                 low_range = np.linspace(low[0], low[1], num=n)
                 high_range = np.linspace(high[0], high[1], num=n)
                 color_range = "{0} ({1})".format(color, r_i)
-                xyz_results[color_range] = []
-                for l_i in range(n):
-                    self.hsv_limits[color]['lower'][r_i][0] = low_range[l_i]
-                    for h_i in range(n):
-                        for method in methods:
-                            self.hsv_limits[color]['upper'][r_i][0] = high_range[h_i]
-                            self.classify_images(methods=[method])
-                            xyz_results[method][color_range].append( (low_range[l_i], high_range[h_i], self.get_accuracy()) )
-        # Surface Plot
-        n_plots = len(xyz_results)
-        color_maps = {'red': 'Reds', 'yellow': 'Oranges', 'green': 'Greens'}
-        fig_surf = plt.figure()
-        for c_i, color_range in enumerate(xyz_results.keys()):
-            # Plot the results for this color
-            ax = fig_surf.add_subplot(1, n_plots, c_i+1, projection='3d')
-            x = [a[0] for a in xyz_results[color_range]['brightness']]
-            y = [a[1] for a in xyz_results[color_range]['brightness']]
-            z = [a[2] for a in xyz_results[color_range]['brightness']]
-            ax.scatter(x, y, z)
-            color = color_range.split()[0]
-            ax.plot_trisurf(x, y, z, cmap=plt.get_cmap(color_maps[color]))
-            ax.set_xlabel('Lower Hue')
-            ax.set_ylabel('Upper Hue')
-            ax.set_zlabel('Classifier Accuracy')
-            ax.set_title(color_range)
+                results[color_range] = {}
+                for method in methods:
+                    method_str = str(method)
+                    results[color_range][method_str] = {'lower': [], 'upper': []}
+                    for low_hue in low_range:
+                        self.hsv_limits[color]['lower'][r_i][0] = low_hue
+                        self.classify_images(methods=method)
+                        results[color_range][method_str]['lower'].append( (low_hue, self.get_accuracy()) )
+                    self.set_default_hsv_limits()
+                    for high_hue in high_range:    
+                        self.hsv_limits[color]['upper'][r_i][0] = high_hue
+                        self.classify_images(methods=method)
+                        results[color_range][method_str]['upper'].append( (high_hue, self.get_accuracy()) )
+                    self.set_default_hsv_limits()
+                
+            
+        # Plot
+        plot_cols = len(results)
+        plot_rows = 2
+        # color_maps = {'red': 'Reds', 'yellow': 'Oranges', 'green': 'Greens'}
+        fig = plt.figure()
+        plot_i = 1
+        for threshold in ['lower', 'upper']:
+            for color_range in results.keys():
+                # Plot the results for this color
+                ax = fig.add_subplot(plot_rows, plot_cols, plot_i)
+                for method in methods:
+                    method_str = str(method)
+                    x = [a[0] for a in results[color_range][method_str][threshold]]
+                    y = [a[1] for a in results[color_range][method_str][threshold]]
+                    ax.plot(x, y, label=method_str)
 
-        fig.suptitle('Effect of Hue Thresholds On Traffic Light Classifier Accuracy with Brightness Method')
+                ax.set_xlabel('Hue Value')
+                ax.set_ylabel('Classifier Accuracy')
+                ax.set_title( "{0} {1} Hue Threshold".format(threshold.capitalize(), color_range.capitalize()) )
+                plot_i += 1
+
+        fig.suptitle('Effect of Hue Thresholds On Traffic Light Classifier Accuracy')
+        plt.legend()
+        plt.tight_layout()
         plt.show()
-        self.set_default_hsv_limits()
-        return xyz_results
+        return results
