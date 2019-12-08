@@ -36,6 +36,7 @@ class TrafficLightClassifier:
         self.set_default_hsv_limits()
         # Set masksize probability density function values
         self.set_default_masksize_pdf_values()
+        self.set_default_masksize_sigmoid_values()
 
         if not original_image_list is None:
             self.image_lists['original'] = original_image_list
@@ -83,7 +84,13 @@ class TrafficLightClassifier:
 
     def set_default_masksize_pdf_values(self):
         self.masksize_pdf_values = {
-            'mean': 1, #0.08,
+            'mean': 1,
+            'scale': -25,
+        }
+
+    def set_default_masksize_sigmoid_values(self):
+        self.masksize_pdf_values = {
+            'mid': 0.4, #0.08,
             'scale': 10, #0.1
         }
 
@@ -514,26 +521,57 @@ class TrafficLightClassifier:
             for threshold in self.hsv_limits[color]['lower']:
                 threshold[1] = s_lower
                 threshold[2] = v_lower
+    
+    def set_h_thresholds(self, color, limit, h_new):
+        self.hsv_limits[color][limit][-1][0] = h_new
+        # for limit in self.hsv_limits[color]['lower']:
+        #     limit[0] = h_lower
+        # for limit in self.hsv_limits[color]['upper']:
+        #     limit[0] = h_upper
 
     def train_classifier(self, training_image_list):
         """
         Train threshold values in classifier using a training data set.
 
         """
-        # First train lower saturation and value thresholds for brightness classification
-        # initial_thresholds = [48, 125]  
         # Create new classifier object
         tlc_training = TrafficLightClassifier(training_image_list)
-        # bounds = Bounds((0, 254), (0, 254))
-        bounds = [(1, 254), (1, 254)]  # Represent lower S and lower V ranges respecitvely
-        results = optimize.shgo(tlc_training.change_and_evaluate_hsv_thresholds, bounds)
-        print("Minimum found at {0}, {1}".format(results.x[0], results.x[1]))
-        print("Accuracy at {0:.1f} %".format(tlc_training.get_accuracy() * 100))
-        self.set_lower_sv_thesholds(results.x[0], results.x[1])
 
-    def change_and_evaluate_hsv_thresholds(self, new_thesholds):
+        # First train lower saturation and value thresholds for brightness classification
+        # bounds = [(1, 254), (1, 254)]  # Represent lower S and lower V ranges respecitvely
+        # results = optimize.shgo(tlc_training.change_and_evaluate_hsv_thresholds, bounds)
+        # print("Minimum found at {0}, {1}".format(results.x[0], results.x[1]))
+        # print("Accuracy at {0:.1f} %".format(tlc_training.get_accuracy() * 100))
+        # self.set_lower_sv_thesholds(results.x[0], results.x[1])
+
+        # Train lower Hue values
+        # Does not allow for multiple hue ranges.... lets see how it goes anyway
+        bounds = [(0, 179)]
+        all_results = {}
+        temp_result = {}
+        for color in self.hsv_limits.keys():
+            for limit in self.hsv_limits[color].keys():
+                # results = optimize.shgo(tlc_training.change_and_evaluate_h_thresholds, bounds, args=(color,))
+                results = optimize.minimize(tlc_training.change_and_evaluate_h_thresholds, bounds, args=(color, limit), method='nelder-mead')
+                temp_result[limit] = x[0]
+            all_results[color] = [temp_result['lower'], temp_result['upper']]
+            print("Minimum for {0} found at {1}, {2}".format(color, results.x[0], results.x[1]))
+        for color in all_results.keys():
+            for limit in color.keys():
+                index = 0 if limit=='lower' else 1
+                self.set_h_thresholds(color, limit, all_results[color][index])
+        self.classify_images(methods=['brightness'])
+        print("Accuracy at {0:.1f} %".format(tlc_training.get_accuracy() * 100))
+
+    def change_and_evaluate_sv_thresholds(self, new_thesholds):
         # Change thresholds
         self.set_lower_sv_thesholds(new_thesholds[0], new_thesholds[1])
+        self.classify_images(methods=['brightness'])
+        accuracy = self.get_accuracy()
+        return 1 - accuracy
+
+    def change_and_evaluate_h_thresholds(self, new_threshold, color, limit):
+        self.set_h_thresholds(color, limit, new_threshold)
         self.classify_images(methods=['brightness'])
         accuracy = self.get_accuracy()
         return 1 - accuracy
@@ -617,3 +655,8 @@ class TrafficLightClassifier:
 
         # Reset pdf values
         self.set_default_masksize_pdf_values()
+
+    def plot_effect_of_hue_thresholds(self):
+        ranges = {
+            'red': []
+        }
