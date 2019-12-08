@@ -34,8 +34,7 @@ class TrafficLightClassifier:
         }
         # Set HSV limits for maksing. Can be modified publically to improve classification
         self.set_default_hsv_limits()
-        # Set masksize probability density function values
-        self.set_default_masksize_pdf_values()
+        # Set masksize sigmoid function values
         self.set_default_masksize_sigmoid_values()
 
         if not original_image_list is None:
@@ -82,16 +81,10 @@ class TrafficLightClassifier:
             }
         }
 
-    def set_default_masksize_pdf_values(self):
-        self.masksize_pdf_values = {
-            'mean': 1,
-            'scale': -25,
-        }
-
     def set_default_masksize_sigmoid_values(self):
-        self.masksize_pdf_values = {
-            'mid': 0.4, #0.08,
-            'scale': 10, #0.1
+        self.masksize_sigmoid_values = {
+            'mid': 0.4,
+            'scale': -25,
         }
 
     def visualize_image(self, image_num, list_name='original'):
@@ -362,6 +355,11 @@ class TrafficLightClassifier:
         mask_coverage = np.sum(mask) / 255 / mask_area
         return mask_coverage
 
+    @staticmethod
+    def sigmoid(X, x_scale=1, x_shift=0):
+        X_new = (X + x_shift) * x_scale 
+        return 1 / (1 + np.exp(-X_new))
+
     def classify_image_by_mask_size(self, image_index, list_name='standardized'):
         """
         Classifies traffic light image by size of color mask. Traffic light bulb are only a small proportion of whole light.
@@ -380,10 +378,10 @@ class TrafficLightClassifier:
             _, mask = self.mask_image(rgb_image,
                                         self.hsv_limits[color]['lower'], self.hsv_limits[color]['upper'])
             coverage.append(self.mask_coverage(mask))
-        # Apply probability density function to coverage to weight masks of right size with higher probability
-        mean = self.masksize_pdf_values['mean']
-        scale = self.masksize_pdf_values['scale']
-        p_masksize = [norm.pdf(x, mean, scale) for x in coverage]
+        # Apply sigmoid function to coverage to weight masks of right size with higher probability
+        mid = self.masksize_sigmoid_values['mid']
+        scale = self.masksize_sigmoid_values['scale']
+        p_masksize = [self.sigmoid(x, mid, scale) for x in coverage]
         
         return p_masksize
 
@@ -614,19 +612,19 @@ class TrafficLightClassifier:
         # Reset hsv limit
         self.set_default_hsv_limits()
 
-    def plot_effect_of_masksize_pdf(self):
-        n = 6
-        mean_range = np.linspace(0, 1, num=n)
-        scale_range = np.linspace(1, 100, num=n)
+    def plot_effect_of_masksize_sigmoid(self):
+        n = 3
+        mid_range = np.linspace(0.1, 0.9, num=n)
+        scale_range = np.linspace(-50, -5, num=n)
         accuracies = np.zeros( (n, n) )
         xyz_results = []
         for m_i in range(n):
-            self.masksize_pdf_values['mean'] = mean_range[m_i]
+            self.masksize_sigmoid_values['mid'] = mid_range[m_i]
             for s_i in range(n):
-                self.masksize_pdf_values['scale'] = scale_range[s_i]
+                self.masksize_sigmoid_values['scale'] = scale_range[s_i]
                 self.classify_images(methods=['masksize'])
                 accuracies[s_i, m_i] = self.get_accuracy()
-                xyz_results.append( (mean_range[m_i], scale_range[s_i], self.get_accuracy()) )
+                xyz_results.append( (mid_range[m_i], scale_range[s_i], self.get_accuracy()) )
         # Plot
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1, projection='3d')
@@ -640,13 +638,13 @@ class TrafficLightClassifier:
             text = "({0:.3f}, {1:.3f}, {2:.2f})".format(point[0], point[1], point[2])
             ax.text(point[0], point[1], point[2], text, zdir=(1, 1, 0))
 
-        x, y = np.meshgrid(mean_range, scale_range)
+        x, y = np.meshgrid(mid_range, scale_range)
         ax.plot_surface(x, y, accuracies, cmap=cm.coolwarm)
 
         ax.set_xlabel('Mean')
         ax.set_ylabel('Scale')
         ax.set_zlabel('Classifier Accuracy')
-        fig.suptitle('Effect of Mask Size PDF Values\nOn Traffic Light Classifier Accuracy')
+        fig.suptitle('Effect of Mask Size Sigmoid Values\nOn Traffic Light Classifier Accuracy')
         # Add a color bar which maps values to colors.
         # fig.colorbar(surf, shrink=0.5, aspect=5)
         plt.show()
@@ -654,7 +652,7 @@ class TrafficLightClassifier:
         # max_point = np.max(xyz_results)
 
         # Reset pdf values
-        self.set_default_masksize_pdf_values()
+        self.set_default_masksize_sigmoid_values()
 
     def plot_effect_of_hue_thresholds(self):
         ranges = {

@@ -36,10 +36,12 @@ tlc_training = TrafficLightClassifier(IMAGE_LIST['training'])
 
 # %% Look at HSV thresholds
 # tlc_training.plot_effect_of_sv_thresholds()
-# tlc_training.plot_effect_of_masksize_pdf()
+
+# %% Look at sigmoid function effect
+tlc_training.plot_effect_of_masksize_sigmoid()
 
 # %%
-tlc.train_classifier(IMAGE_LIST['training'])
+# tlc.train_classifier(IMAGE_LIST['training'])
 
 
 
