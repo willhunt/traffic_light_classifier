@@ -62,7 +62,7 @@ class Tests(unittest.TestCase):
         # If the function does *not* pass all 3 tests above, it enters this exception
         except self.failureException as e:
             # Print out an error message
-            print_fail()
+            # print_fail()
             print("One hot function did not return the expected one-hot label.")
             print('\n'+str(e))
             return
@@ -86,7 +86,7 @@ class Tests(unittest.TestCase):
                     self.assertNotEqual(predicted_label, [0, 0, 1])
                 except self.failureException as e:
                     # Print out an error message
-                    print_fail()
+                    # print_fail()
                     print("Warning: A red light is classified as green.")
                     print('\n'+str(e))
                     return
@@ -155,6 +155,25 @@ class Tests(unittest.TestCase):
             # tlc.visualize_image_sample(list_name='misclassified', randomize=False, n_plots=n_plots)
             print(str(e))
 
+    def test_get_hsv_range_for_optimisation(self):
+        tlc = get_test_object(list_name='test')
+        hsv_s = tlc.get_hsv_range_for_optimisation('s')
+
+        expected_result = {
+            'red': {
+                'lower': [ [0, 200], [0, 200] ],
+                'upper': [ [201, 255], [201, 255] ]
+            },
+            'yellow': {
+                'lower': [ [0, 200] ],
+                'upper': [ [201, 255] ]
+            },  
+            'green': {
+                'lower': [ [0, 200] ],
+                'upper': [ [201, 255] ]
+            }
+        }
+        self.assertEqual(hsv_s, expected_result)
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,10 +4,10 @@ from mpl_toolkits.mplot3d import axes3d
 from matplotlib import cm
 from scipy.stats import norm
 from scipy import optimize
-from scipy.optimize import Bounds
 import random
 import cv2
 import math
+import copy
 
 class TrafficLightClassifier:
     """
@@ -43,7 +43,7 @@ class TrafficLightClassifier:
             self.classify_images()
 
     def set_original_image_list(self, original_image_list):
-        """ Sets originl image list. Also runs preprocessing and classification steps """
+        """ Sets original image list. Also runs preprocessing and classification steps """
         self.image_lists['original'] = original_image_list
         self.classify_images()
 
@@ -80,6 +80,32 @@ class TrafficLightClassifier:
                 ]
             }
         }
+    
+    def get_hsv_range_for_optimisation(self, hsv):
+        ranges = {}
+
+        ranges['h'] = {
+            'red': {
+                'lower': [ [0, 2], [150, 180] ],
+                'upper': [ [3, 15], [170, 220] ]
+            },
+            'yellow': {
+                'lower': [ [5, 40] ],
+                'upper': [ [41, 80] ]
+            },  
+            'green': {
+                'lower': [ [20, 100] ],
+                'upper': [ [85, 110] ]
+            }
+        }
+        range_sv = {'lower': [0, 200], 'upper': [201, 255]}
+        ranges['s'] = copy.deepcopy(ranges['h'])
+        for color in ranges['s'].keys():
+            for limit in ranges['s'][color].keys():
+                for s_range in ranges['s'][color][limit]:
+                    s_range[:] = range_sv[limit][:]
+        ranges['v'] = copy.deepcopy(ranges['s'])
+        return ranges[hsv]
 
     def set_default_masksize_sigmoid_values(self):
         self.masksize_sigmoid_values = {
@@ -534,52 +560,81 @@ class TrafficLightClassifier:
                 if not v_lower is None:
                     threshold[2] = v_lower
     
-    def set_h_thresholds(self, color, limit, h_new):
+    def set_hsv_thresholds(self, hsv, color, limit, h_new, limit_index=0):
         """
          Sets hue thresholds for all colors for HSV masking.
 
         Args:
+            hsv (string): 'h', 's', or 'v'
             color (string): 'Red', 'yellow', or 'green' color.
             limit (string): 'upper' or 'lower' limit'
             h_new (string): New hue threshold value
         """
+        if hsv not in ['h', 's', 'v']:
+            raise ValueError("hsv argument must be 'h', 's', or 'v'")
         if limit not in ['upper', 'lower']:
             raise ValueError("limit argument must be either 'lower' or 'upper'")
-        self.hsv_limits[color][limit][-1][0] = h_new
+        hash_hsv = {'h':0, 's':1, 'v':2}
+        self.hsv_limits[color][limit][limit_index][hash_hsv[hsv]] = h_new
 
+    
     def train_classifier(self, training_image_list):
         """
         Train threshold values in classifier using a training data set.
 
+        Args:
+            training_image_list (list): List of images and labels for training thresholds.
+        
+        Returns:
+            results (dict): Dictionary of results
         """
         # Create new classifier object
         tlc_training = TrafficLightClassifier(training_image_list)
 
-        # First train lower saturation and value thresholds for brightness classification
-        # bounds = [(1, 254), (1, 254)]  # Represent lower S and lower V ranges respecitvely
-        # results = optimize.shgo(tlc_training.change_and_evaluate_hsv_thresholds, bounds)
-        # print("Minimum found at {0}, {1}".format(results.x[0], results.x[1]))
-        # print("Accuracy at {0:.1f} %".format(tlc_training.get_accuracy() * 100))
-        # self.set_lower_sv_thesholds(results.x[0], results.x[1])
+        def train_for_hsv(tlc, hsv):
+            """
+            Args:
+                tlc (TrafficLightClassifier)
+                hsv (char): 'h', 's' or 'v'
+            """
+            print("Initial/default training accuracy at {0:.1f} %".format(tlc.get_accuracy() * 100))
+            ranges = tlc.get_hsv_range_for_optimisation(hsv)
+            results = {}
+            for color in ranges.keys():
+                for r_i, (low, high) in enumerate(zip(ranges[color]['lower'], ranges[color]['upper'])):
+                    color_range = "{0} ({1})".format(color, r_i)
+                    results[color_range] = {}
+                    for limit_name, limit_range in zip(['lower', 'upper'], [low, high]):
+                        # Set other limit to closest end so independant optimisation has the best chance
+                        if limit_name == 'lower':
+                            self.set_hsv_thresholds(hsv, color, 'upper', high[0], r_i)
+                        else:
+                            self.set_hsv_thresholds(hsv, color, 'lower', low[1], r_i)
+                        result = optimize.minimize_scalar(
+                            tlc.change_and_evaluate_hsv_thresholds,
+                            bounds=limit_range,
+                            method='bounded',
+                            args=(hsv, color, limit_name, r_i)
+                        )
+                        results[color_range][limit_name] = result.x
 
-        # Train lower Hue values
-        # Does not allow for multiple hue ranges.... lets see how it goes anyway
-        bounds = [(0, 179)]
-        all_results = {}
-        temp_result = {}
-        for color in self.hsv_limits.keys():
-            for limit in self.hsv_limits[color].keys():
-                # results = optimize.shgo(tlc_training.change_and_evaluate_h_thresholds, bounds, args=(color,))
-                results = optimize.minimize(tlc_training.change_and_evaluate_h_thresholds, bounds, args=(color, limit), method='nelder-mead')
-                temp_result[limit] = x[0]
-            all_results[color] = [temp_result['lower'], temp_result['upper']]
-            print("Minimum for {0} found at {1}, {2}".format(color, results.x[0], results.x[1]))
-        for color in all_results.keys():
-            for limit in color.keys():
-                index = 0 if limit=='lower' else 1
-                self.set_h_thresholds(color, limit, all_results[color][index])
-        self.classify_images(methods=['brightness'])
-        print("Accuracy at {0:.1f} %".format(tlc_training.get_accuracy() * 100))
+                    # Set this optimum as new value (once both upper and lower are optimised)
+                    self.set_hsv_thresholds(hsv, color, 'lower', results[color_range]['lower'], r_i)
+                    self.set_hsv_thresholds(hsv, color, 'upper', results[color_range]['upper'], r_i)
+
+                    print("Minimum for {0} found with {1} range {2} - {3}".format(color_range, hsv.capitalize(),
+                            results[color_range]['lower'], results[color_range]['upper']))
+            print("Training accuracy at {0:.1f} %".format(tlc.get_accuracy() * 100))
+            return results
+
+        # Train HSV values
+        results = {}
+        for hsv in ['h', 's', 'v']:
+            results[hsv] = train_for_hsv(tlc_training, hsv)
+
+        print("Final training accuracy at {0:.1f} %".format(tlc_training.get_accuracy() * 100))
+        print("Actual (test) at {0:.1f} %".format(self.get_accuracy() * 100))
+        return results
 
     def change_and_evaluate_sv_thresholds(self, new_thesholds):
         # Change thresholds
@@ -588,9 +643,9 @@ class TrafficLightClassifier:
         accuracy = self.get_accuracy()
         return 1 - accuracy
 
-    def change_and_evaluate_h_thresholds(self, new_threshold, color, limit):
-        self.set_h_thresholds(color, limit, new_threshold)
-        self.classify_images(methods=['brightness'])
+    def change_and_evaluate_hsv_thresholds(self, new_threshold, hsv, color, limit, limit_index=0):
+        self.set_hsv_thresholds(hsv, color, limit, new_threshold, limit_index)
+        self.classify_images()
         accuracy = self.get_accuracy()
         return 1 - accuracy
 
@@ -734,34 +789,7 @@ class TrafficLightClassifier:
             results: Dictionary of results.
         """
         n = 5
-        ranges = {
-            'red': {
-                'lower': [
-                    [0, 5],
-                    [150, 180]
-                ],
-                'upper': [
-                    [1, 15],
-                    [170, 220]
-                ]
-            },
-            'yellow': {
-                'lower': [ 
-                    [5, 40]
-                ],
-                'upper': [
-                    [40, 100]
-                ]
-            },  
-            'green': {
-                'lower': [
-                    [20, 100]
-                ],
-                'upper': [
-                    [85, 110]
-                ]
-            }
-        }
+        ranges = self.get_hsv_range_for_optimisation('h')
         results = {}
         for color in ranges.keys():
             for r_i, (low, high) in enumerate(zip(ranges[color]['lower'], ranges[color]['upper'])):

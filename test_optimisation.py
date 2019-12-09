@@ -39,13 +39,13 @@ tlc_training = TrafficLightClassifier(IMAGE_LIST['training'])
 # tlc_training.plot_effect_of_sv_thresholds_surf()
 
 # %% Look at sigmoid function effect
-tlc_training.plot_effect_of_masksize_sigmoid()
+# tlc_training.plot_effect_of_masksize_sigmoid()
 
 # %% Look at hue ranges
 # tlc_training.plot_effect_of_hue_thresholds()
 
 # %%
-# tlc.train_classifier(IMAGE_LIST['training'])
+tlc.train_classifier(IMAGE_LIST['training'])
 
 
 
