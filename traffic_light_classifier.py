@@ -636,14 +636,10 @@ class TrafficLightClassifier:
         print("Actual (test) at {0:.1f} %".format(self.get_accuracy() * 100))
         return results
 
-    def change_and_evaluate_sv_thresholds(self, new_thesholds):
-        # Change thresholds
-        self.set_lower_sv_thesholds(new_thesholds[0], new_thesholds[1])
-        self.classify_images(methods=['brightness'])
-        accuracy = self.get_accuracy()
-        return 1 - accuracy
-
     def change_and_evaluate_hsv_thresholds(self, new_threshold, hsv, color, limit, limit_index=0):
+        """
+        Function for optimizer to changehsv thresholds then classify and return 1 - accuracy (optimiser minimizes this)
+        """
         self.set_hsv_thresholds(hsv, color, limit, new_threshold, limit_index)
         self.classify_images()
         accuracy = self.get_accuracy()
