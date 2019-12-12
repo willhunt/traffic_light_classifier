@@ -10,6 +10,7 @@ You will need the following packages:
 numpy
 matplotlib
 opencv-python
+scipy
 ```
 
 ### Running
