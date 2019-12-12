@@ -51,34 +51,34 @@ class TrafficLightClassifier:
 
     def set_default_hsv_limits(self):
         """ Sets default HSV limits for masking red, yellow and green colors"""
-        s_limits = [35, 255] #35
-        v_limits = [125, 255]  #125
+        s_limits = [25, 255] #35
+        v_limits = [12, 255]  #125
 
         self.hsv_limits = {
             'red': {
                 'lower': [
-                    np.array([1, s_limits[0], v_limits[0]]),
-                    np.array([172, s_limits[0], v_limits[0]])
+                    np.array([1, s_limits[0], v_limits[0]]),  # h=1
+                    np.array([157, s_limits[0], v_limits[0]])  # h=172
                 ],
                 'upper': [
-                    np.array([5, s_limits[1], v_limits[1]]),
-                    np.array([185, s_limits[1], v_limits[1]])
+                    np.array([6, s_limits[1], v_limits[1]]),  # h=5
+                    np.array([220, s_limits[1], v_limits[1]])  # h=185
                 ]
             },
             'yellow': {
                 'lower': [ 
-                    np.array([13, s_limits[0], v_limits[0]])
+                    np.array([10, s_limits[0], v_limits[0]])  # h=13
                 ],
                 'upper': [
-                    np.array([40, s_limits[1], v_limits[1]])
+                    np.array([80, s_limits[1], v_limits[1]])  # h=40
                 ]
             },  
             'green': {
                 'lower': [
-                    np.array([75, s_limits[0], v_limits[0]]) #80
+                    np.array([50, s_limits[0], v_limits[0]]) # h=75
                 ],
                 'upper': [
-                    np.array([93, s_limits[1], v_limits[1]]) #114
+                    np.array([102, s_limits[1], v_limits[1]]) # h=93
                 ]
             }
         }
@@ -523,8 +523,8 @@ class TrafficLightClassifier:
         p_max = max(p_combined)
         predicted_label = [1 if x==p_max else 0 for x in p_combined]
         # Default to red if unsure as it is safer
-        # if sum(predicted_label) > 1:
-        #     predicted_label = [1, 0, 0]
+        if sum(predicted_label) > 1:
+            predicted_label = [1, 0, 0]
         
         return predicted_label
 
@@ -594,7 +594,7 @@ class TrafficLightClassifier:
                 raise ValueError("Argument viz_type must be either 'mask' or 'image'")
         plt.show()
 
-    def classify_images(self, methods=['brightness']):
+    def classify_images(self, methods=['brightness', 'maskpos']):
         """
         Runs all necessary methods to classify images.
 
