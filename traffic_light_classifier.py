@@ -2,8 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib import cm
-from scipy.stats import norm
-from scipy import optimize
+from scipy import optimize, stats
 import random
 import cv2
 import math
@@ -24,6 +23,9 @@ class TrafficLightClassifier:
         hsv_limits: A dictionary of lower and upper limits for HSV masking of red, yellow and green
             traffic light colors. Set by default but can be adjusted to improve classification.
     """
+    ERROR_MESSAGES = {
+        'color_arg': "Argument color must be 'red', 'yellow' or 'green'"
+    }
 
     def __init__(self, original_image_list=None):
         self.image_lists = {
@@ -49,8 +51,8 @@ class TrafficLightClassifier:
 
     def set_default_hsv_limits(self):
         """ Sets default HSV limits for masking red, yellow and green colors"""
-        s_limits = [1, 255] #35
-        v_limits = [1, 255]  #125
+        s_limits = [35, 255] #35
+        v_limits = [125, 255]  #125
 
         self.hsv_limits = {
             'red': {
@@ -98,13 +100,20 @@ class TrafficLightClassifier:
                 'upper': [ [85, 110] ]
             }
         }
-        range_sv = {'lower': [0, 200], 'upper': [201, 255]}
+        # Saturation range
+        range_s = {'lower': [20, 100], 'upper': [254, 255]}
         ranges['s'] = copy.deepcopy(ranges['h'])
         for color in ranges['s'].keys():
             for limit in ranges['s'][color].keys():
                 for s_range in ranges['s'][color][limit]:
-                    s_range[:] = range_sv[limit][:]
+                    s_range[:] = range_s[limit][:]
+        # Value range
+        range_v = {'lower': [100, 150], 'upper': [254, 255]}
         ranges['v'] = copy.deepcopy(ranges['s'])
+        for color in ranges['v'].keys():
+            for limit in ranges['v'][color].keys():
+                for v_range in ranges['v'][color][limit]:
+                    v_range[:] = range_v[limit][:]
         return ranges[hsv]
 
     def set_default_masksize_sigmoid_values(self):
@@ -131,7 +140,7 @@ class TrafficLightClassifier:
         ax.set_ylabel('y pixels')
         plt.show()
 
-    def visualize_image_sample(self, list_name='original', n_plots=10, randomize=True):
+    def visualize_image_sample(self, list_name='original', n_plots=7, randomize=True):
         """
         Plots multiple images from defined set.
 
@@ -142,9 +151,9 @@ class TrafficLightClassifier:
         """
         image_list = self.image_lists[list_name]
 
-        max_cols = 10
+        max_cols = 7
         rows = math.ceil(n_plots / max_cols)
-        cols = 10 if rows > 1 else n_plots
+        cols = max_cols if rows > 1 else n_plots
         fig, axes = plt.subplots(rows, cols, figsize=(12, 2*rows))
         if randomize:
             training_subset = random.sample(image_list, n_plots)
@@ -159,7 +168,7 @@ class TrafficLightClassifier:
         plt.show()
 
     @staticmethod
-    def one_hot_encode(label):
+    def one_hot_encode(color):
         """
         One hot encodes 'red', 'yellow', 'green' traffic light tags.
 
@@ -169,16 +178,16 @@ class TrafficLightClassifier:
             one_hot_encode("green") will return: [0, 0, 1]
 
         Args:
-            label (string): Traffic light color. Must be 'red', 'yellow' or 'green'
+            color (string): Traffic light color. Must be 'red', 'yellow' or 'green'
 
         Returns:
             one_hot_encoded (list): One hot encoded list from input
         """
-        labels = ['red', 'yellow', 'green']
-        if label not in labels:
-            raise ValueError("label must be 'red', 'yellow' or 'green'")
+        colors = ['red', 'yellow', 'green']
+        if color not in colors:
+            raise ValueError(TrafficLightClassifier.ERROR_MESSAGES['color_arg'])
 
-        one_hot_encoded = [1 if label==x else 0 for x in labels] 
+        one_hot_encoded = [1 if color==x else 0 for x in colors] 
         
         return one_hot_encoded
 
@@ -202,15 +211,15 @@ class TrafficLightClassifier:
         # Standardize size
         square_image = cv2.resize(np.copy(rgb_image), (25, 25))
 
-        # Standardize contrast
+        # Standardize contrast - didn't help in the end
         # YUV VERSION - helps a tiny bit but throws the hues off
-        stdcontrast_image =  cv2.cvtColor(square_image, cv2.COLOR_RGB2YUV)
-        # Equlaize histogram on value channel
-        stdcontrast_image[:,:,0] = cv2.equalizeHist(stdcontrast_image[:,:,0])
-        #  Convert back to RGB
-        stdcontrast_image = cv2.cvtColor(stdcontrast_image, cv2.COLOR_YUV2RGB)
+        # stdcontrast_image =  cv2.cvtColor(square_image, cv2.COLOR_RGB2YUV)
+        # # Equlaize histogram on value channel
+        # stdcontrast_image[:,:,0] = cv2.equalizeHist(stdcontrast_image[:,:,0])
+        # #  Convert back to RGB
+        # stdcontrast_image = cv2.cvtColor(stdcontrast_image, cv2.COLOR_YUV2RGB)
 
-        # Increase contrast
+        # Increase contrast - didn't help in the end
         # highcontrast_image = TrafficLightClassifier.change_brightness_and_contrast(square_image, 2.0, -20.0)
         
         return square_image
@@ -420,7 +429,68 @@ class TrafficLightClassifier:
         
         return p_masksize
 
-    def classify_image(self, image_index, list_name='standardized', methods=['brightness']):
+    @staticmethod
+    def get_probability_from_position(mask, color):
+        """
+        Calculates probability that a light is a certain color based upon the location of the image mask pixels
+
+        Args:
+            mask (numpy.array): Image mask as 2D numpy array
+            color (string): Traffic light color
+
+        """
+        n_rows, n_cols = mask.shape
+
+        colors = ['red', 'yellow', 'green']
+        if color not in colors:
+            raise ValueError(TrafficLightClassifier.ERROR_MESSAGES['color_arg'])
+
+        i_color = colors.index(color)
+        # Mean in centerhorizontally and vertically positioned where light is expected
+        mu = [i_color * n_rows / 4, n_cols / 2]
+        # Covariance
+        cov_scale = 100
+        cov = cov = np.array([[cov_scale, 0],[0, cov_scale]])
+        # Multivariate normal distribution used to determine likelyhood of position
+        rv = stats.multivariate_normal(mu, cov)
+
+        p_pos = 0
+        for i_row in range(n_rows):
+            for i_col in range(n_cols):
+                # Get cumulative probability for each point from 2D probability density function
+                if mask[i_row, i_col] > 0:
+                    p_pos += rv.pdf([i_row, i_col])
+        return p_pos
+
+    def classify_image_by_mask_position(self, image_index, list_name='standardized'):
+        """
+        Classifies traffic light image by size of color mask. Traffic light bulb are only a small proportion of whole light.
+
+        Args:
+            image_index (int): Index of image.
+            list_name (string): Name of image list to select from.
+
+        Returns:
+            p_maskpos (list): Probabilities of that light is showing each color in one hot encoded list order.
+        """
+        rgb_image = self.image_lists[list_name][image_index][0]
+        colors = ['red', 'yellow', 'green']
+        p_maskpos = []
+
+        for color in colors:
+            _, mask = self.mask_image(rgb_image,
+                                        self.hsv_limits[color]['lower'], self.hsv_limits[color]['upper'])
+            p_maskpos.append(self.get_probability_from_position(mask, color))
+        # Normalize probabilties to 1 for maximum
+        p_max = max(p_maskpos)
+        if p_max > 0:
+            p_maskpos = [x / p_max for x in p_maskpos]
+        else:
+            p_maskpos = [1, 1, 1]
+        
+        return p_maskpos
+
+    def classify_image(self, image_index, list_name='standardized', methods=['brightness', 'maskpos']):
         """
         Classifies traffic light image by all available features
 
@@ -436,22 +506,29 @@ class TrafficLightClassifier:
             raise ValueError("methods argument must be a list")
         classification_functions = {
             'brightness': self.classify_image_by_brightness,
-            'masksize': self.classify_image_by_mask_size
+            'masksize': self.classify_image_by_mask_size,
+            'maskpos': self.classify_image_by_mask_position
         }
         p_combined = [1, 1, 1]
         for method in methods:
             p_method = classification_functions[method](image_index, list_name)
             p_combined = [x*y for x,y in zip(p_combined, p_method)]
+        # Bias for red light over green
+        bias = 0.25
+        if (p_combined[0] > 0) and (p_combined[2] > 0):
+            p_combined[0] *= (1 + bias)
+            p_combined[2] *= (1 - bias)
+
         # Convert to one hot encoded prediction
         p_max = max(p_combined)
         predicted_label = [1 if x==p_max else 0 for x in p_combined]
         # Default to red if unsure as it is safer
-        if sum(predicted_label) > 1:
-            predicted_label = [1, 0, 0]
+        # if sum(predicted_label) > 1:
+        #     predicted_label = [1, 0, 0]
         
         return predicted_label
 
-    def get_misclassified_images(self, methods=['brightness']):
+    def get_misclassified_images(self, methods=['brightness', 'maskpos']):
         """
         Get misclassified images based upon labels.
 
@@ -493,7 +570,7 @@ class TrafficLightClassifier:
             misclassified_masks.append(self.image_lists['masks'][index])
         return misclassified_masks
 
-    def visualize_masks(self, image_num, list_name='standardized', colors=None, viz_type='mask'):
+    def visualize_masks(self, image_num, list_name='standardized', colors=None, viz_type='mask', standardize=True):
         """
         Visualizes the red yellow and green masks together for an image
         """
@@ -503,6 +580,8 @@ class TrafficLightClassifier:
         fig, axes = plt.subplots(1, len(colors))
         fig.suptitle("Mask for image {0} from list {1}".format(image_num, list_name))
         rgb_image = self.image_lists[list_name][image_num][0]
+        if standardize:
+            rgb_image = self.standardize_image(rgb_image)
         for color, ax in zip(colors, axes):
             ax.set_title(color)
             masked_image, mask = self.mask_image(rgb_image,
@@ -574,6 +653,10 @@ class TrafficLightClassifier:
             raise ValueError("hsv argument must be 'h', 's', or 'v'")
         if limit not in ['upper', 'lower']:
             raise ValueError("limit argument must be either 'lower' or 'upper'")
+        colors = ['red', 'yellow', 'green']
+        if color not in colors:
+            raise ValueError(TrafficLightClassifier.ERROR_MESSAGES['color_arg'])
+
         hash_hsv = {'h':0, 's':1, 'v':2}
         self.hsv_limits[color][limit][limit_index][hash_hsv[hsv]] = h_new
 
@@ -597,7 +680,6 @@ class TrafficLightClassifier:
                 tlc (TrafficLightClassifier)
                 hsv (char): 'h', 's' or 'v'
             """
-            print("Initial/default training accuracy at {0:.1f} %".format(tlc.get_accuracy() * 100))
             ranges = tlc.get_hsv_range_for_optimisation(hsv)
             results = {}
             for color in ranges.keys():
@@ -622,17 +704,21 @@ class TrafficLightClassifier:
                     self.set_hsv_thresholds(hsv, color, 'lower', results[color_range]['lower'], r_i)
                     self.set_hsv_thresholds(hsv, color, 'upper', results[color_range]['upper'], r_i)
 
-                    print("Minimum for {0} found with {1} range {2} - {3}".format(color_range, hsv.capitalize(),
+                    print("\tMinimum for {0} found with {1} range ({2:.1f}, {3:.1f})".format(color_range, hsv.capitalize(),
                             results[color_range]['lower'], results[color_range]['upper']))
-            print("Training accuracy at {0:.1f} %".format(tlc.get_accuracy() * 100))
+            print("Training accuracy at {0:.2f} % after optimising {1} values".format(tlc.get_accuracy() * 100, hsv.capitalize()))
             return results
 
         # Train HSV values
+        print("Initial/default training accuracy at {0:.2f} %".format(tlc_training.get_accuracy() * 100))
         results = {}
-        for hsv in ['h', 's', 'v']:
+        for hsv in ['v', 's', 'h']:
             results[hsv] = train_for_hsv(tlc_training, hsv)
 
         print("Final training accuracy at {0:.1f} %".format(tlc_training.get_accuracy() * 100))
+        # Now update this object with new values
+        self.hsv_limits = tlc_training.hsv_limits
+        self.classify_images()
         print("Actual (test) at {0:.1f} %".format(self.get_accuracy() * 100))
         return results
 
@@ -640,11 +726,35 @@ class TrafficLightClassifier:
         """
         Function for optimizer to changehsv thresholds then classify and return 1 - accuracy (optimiser minimizes this)
         """
+        colors = ['red', 'yellow', 'green']
+        if color not in colors:
+            raise ValueError(TrafficLightClassifier.ERROR_MESSAGES['color_arg'])
+
         self.set_hsv_thresholds(hsv, color, limit, new_threshold, limit_index)
         self.classify_images()
         accuracy = self.get_accuracy()
-        return 1 - accuracy
+        # Add in penalty for scoring red light as green - NB: This doesn't seem to work
+        # n_red_as_green = self.get_num_red_light_classified_as_green()
+        # if n_red_as_green > 0:
+        #     accuracy = 0
+        # accuracy -= n_red_as_green * 0.  # Penalize
+        return 1 - max(accuracy, 0)
 
+    def get_num_red_light_classified_as_green(self):
+        """
+        Returns number of red lights that have been misclassified as green lights
+
+        Returns:
+            n_red_as_green (int): Number of red lights that have been classified as green lights
+        """
+        n_red_as_green = 0
+        for _, predicted_label, true_label in self.image_lists['misclassified']:
+            if true_label == [1, 0, 0]:
+                if predicted_label == [0, 0, 1]:
+                    n_red_as_green += 1
+        return n_red_as_green
+
+        
     def plot_effect_of_sv_thresholds_surf(self):
         """
         Plots effect of lower saturation and value thresholds using brightness classification method. Ploted with surface to view interactions.
@@ -684,7 +794,7 @@ class TrafficLightClassifier:
         # Reset hsv limit
         self.set_default_hsv_limits()
 
-    def plot_effect_of_sv_thresholds(self, methods=[['brightness'], ['masksize'], ['brightness', 'masksize']]):
+    def plot_effect_of_sv_thresholds(self, methods=[ ['brightness'], ['brightness', 'masksize'], ['maskpos'], ['brightness', 'maskpos'] ]):
         """
         Plots effect of lower saturation and value thresholds using all classification methods. Values evaluated seperately without interaction.
 
@@ -729,7 +839,7 @@ class TrafficLightClassifier:
             ax.set_title( "{0} Lower Threshold".format(variable.capitalize()) )
             plot_i += 1
 
-        fig.suptitle('Effect of Saturation & Value Lower Thresholds On Traffic Light Classifier Accuracy')
+        # fig.suptitle('Effect of Saturation & Value Lower Thresholds On Traffic Light Classifier Accuracy')
         plt.legend()
         plt.tight_layout()
         plt.show()
@@ -742,7 +852,6 @@ class TrafficLightClassifier:
         n = 5
         mid_range = np.linspace(0, 1.2, num=n)
         scale_range = np.linspace(-100, -25, num=n)
-        accuracies = np.zeros( (n, n) )
         xyz_results = []
         for m_i in range(n):
             self.masksize_sigmoid_values['mid'] = mid_range[m_i]
@@ -772,12 +881,12 @@ class TrafficLightClassifier:
         ax.set_xlabel('Mean')
         ax.set_ylabel('Scale')
         ax.set_zlabel('Classifier Accuracy')
-        fig.suptitle('Effect of Mask Size Sigmoid Values\nOn Traffic Light Classifier Accuracy')
+        # fig.suptitle('Effect of Mask Size Sigmoid Values\nOn Traffic Light Classifier Accuracy')
         plt.show()
         # Reset pdf values
         self.set_default_masksize_sigmoid_values()
 
-    def plot_effect_of_hue_thresholds(self, methods=[['brightness'], ['masksize'], ['brightness', 'masksize']]):
+    def plot_effect_of_hue_thresholds(self, methods=[ ['brightness'], ['brightness', 'masksize'], ['maskpos'], ['brightness', 'maskpos'] ]):
         """
         Plots effect of hue upper and lower thresholds for all classification methods. Values evaluated seperately without interaction.
 
@@ -811,8 +920,7 @@ class TrafficLightClassifier:
         # Plot
         plot_cols = len(results)
         plot_rows = 2
-        # color_maps = {'red': 'Reds', 'yellow': 'Oranges', 'green': 'Greens'}
-        fig = plt.figure()
+        fig = plt.figure(figsize=(12, 6))
         plot_i = 1
         for threshold in ['lower', 'upper']:
             for color_range in results.keys():
@@ -829,7 +937,7 @@ class TrafficLightClassifier:
                 ax.set_title( "{0} {1} Hue Threshold".format(threshold.capitalize(), color_range.capitalize()) )
                 plot_i += 1
 
-        fig.suptitle('Effect of Hue Thresholds On Traffic Light Classifier Accuracy')
+        # fig.suptitle('Effect of Hue Thresholds On Traffic Light Classifier Accuracy')
         plt.legend()
         plt.tight_layout()
         plt.show()
